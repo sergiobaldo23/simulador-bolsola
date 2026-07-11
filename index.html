@@ -137,7 +137,10 @@ async function carregarBase() {
 }
 
 async function carregarTicker(ticker) {
-  const key = ticker.toUpperCase();
+  // Os arquivos de dados sao salvos SEM o sufixo ".SA" (ex: BBAS3.json).
+  // Aceita tambem o formato "BBAS3.SA" (como aparece no Yahoo Finance),
+  // removendo o sufixo antes de montar o nome do arquivo.
+  const key = ticker.toUpperCase().trim().replace(/\.SA$/i, '');
   if (cacheTicker[key]) return cacheTicker[key];
   const resp = await fetch(DATA_DIR + key + '.json');
   if (!resp.ok) throw new Error(`Ativo "${key}" não encontrado na base.`);
