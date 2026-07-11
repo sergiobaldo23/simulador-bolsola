@@ -330,7 +330,7 @@ async function calcular() {
   const totalProventos = ativos.reduce((s, a) => s + a.totalProventos, 0);
 
   renderResultado({
-    ativos, capitalTotal, datasGlobais, curvaTotal, totalProventos,
+    ativos, capitalTotal, datasGlobais, curvaTotal, totalProventos, portfolioStart,
     finalDrip: curvaTotal.drip[curvaTotal.drip.length - 1],
     finalCotacao: curvaTotal.cotacao[curvaTotal.cotacao.length - 1],
     finalAtivoCDI: curvaTotal.ativoCDI[curvaTotal.ativoCDI.length - 1],
@@ -361,14 +361,48 @@ function renderResultado(r) {
 
   const AX = { paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: { color: '#1c2b22', size: 12 },
     xaxis: { gridcolor: '#e3ece4' }, yaxis: { gridcolor: '#e3ece4', title: 'Capital (R$)' } };
+
+  // Destaques com o capital final de cada curva, direto no grafico (nao so
+  // nos cartoes acima) — inclui a soma de todos os ativos (linha DRIP/total).
+  const ultimaData = r.datasGlobais[r.datasGlobais.length - 1];
+  const destaques = [
+    { y: r.finalDrip, cor: '#007a33', txt: 'Total: ' + fmtR$(r.finalDrip) },
+    { y: r.finalAtivoCDI, cor: '#0f8a72', txt: fmtR$(r.finalAtivoCDI) },
+    { y: r.finalCotacao, cor: '#b8860b', txt: fmtR$(r.finalCotacao) },
+    { y: r.finalCDI, cor: '#6b7a72', txt: fmtR$(r.finalCDI) },
+  ];
+  const anotacoes = destaques.map((d, i) => ({
+    x: ultimaData, y: d.y, xref: 'x', yref: 'y', xanchor: 'left', yanchor: 'middle',
+    text: '<b>' + d.txt + '</b>', showarrow: false, font: { color: d.cor, size: i === 0 ? 12 : 11 },
+    xshift: 8, align: 'left',
+  }));
+
+  // Linhas verticais nas datas de compra que NAO coincidem com o inicio do
+  // portfolio — marcam visualmente onde um novo aporte "entra" na carteira
+  // (e onde a curva de 100% CDI da um degrau, ja que o capital daquele ativo
+  // so passa a render CDI a partir dali).
+  const aportes = r.ativos.filter(a => a.dataCompraReal > r.portfolioStart);
+  const linhasAporte = aportes.map(a => ({
+    type: 'line', x0: a.dataCompraReal, x1: a.dataCompraReal, xref: 'x',
+    y0: 0, y1: 1, yref: 'paper',
+    line: { color: '#b8860b', width: 1, dash: 'dot' },
+  }));
+  const rotulosAporte = aportes.map(a => ({
+    x: a.dataCompraReal, y: 1, xref: 'x', yref: 'paper', yanchor: 'bottom',
+    text: '↓ aporte ' + a.ticker, showarrow: false,
+    font: { color: '#8a6d00', size: 10 },
+  }));
+
   Plotly.newPlot('chart', [
-    { x: r.datasGlobais, y: r.curvaTotal.drip, name: 'DRIP (reinveste em ações)', line: { color: '#007a33', width: 2 } },
+    { x: r.datasGlobais, y: r.curvaTotal.drip, name: 'DRIP (reinveste em ações) — soma de todos os ativos', line: { color: '#007a33', width: 2.5 } },
     { x: r.datasGlobais, y: r.curvaTotal.ativoCDI, name: 'Ação + dividendo em CDI', line: { color: '#0f8a72', width: 2 } },
     { x: r.datasGlobais, y: r.curvaTotal.cotacao, name: 'Só cotação (sem dividendo)', line: { color: '#b8860b', width: 2 } },
     { x: r.datasGlobais, y: r.curvaTotal.cdi100, name: '100% CDI (nunca comprou)', line: { color: '#6b7a72', width: 2, dash: 'dot' } },
   ], Object.assign({}, AX, {
-    margin: { l: 60, r: 20, t: 20, b: 40 },
+    margin: { l: 60, r: 92, t: aportes.length ? 34 : 20, b: 40 },
     legend: { font: { color: '#1c2b22' }, orientation: 'h', y: -0.15 },
+    annotations: anotacoes.concat(rotulosAporte),
+    shapes: linhasAporte,
   }), { responsive: true, displayModeBar: false });
 
   const tbl = document.getElementById('tblDetalhe');
