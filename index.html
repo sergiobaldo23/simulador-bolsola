@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simulador de Ações vs. Renda Fixa</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+:root{--bg:#0d1117;--panel:#141a24;--panel2:#1a2130;--bd:#232c3d;--tx:#c9d4e3;--mut:#7d8aa0;--acc:#5aa9f0;--grn:#5fd08a;--amb:#f0b85a;--red:#ef7a7a;--vio:#b79df0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;font-size:15px;line-height:1.6}
+.wrap{max-width:920px;margin:0 auto;padding:0 20px 60px}
+header{background:linear-gradient(135deg,#0b1220,#16233b);border-bottom:2px solid #1f3355;padding:34px 0 26px;margin-bottom:24px}
+header .in{max-width:920px;margin:0 auto;padding:0 20px}
+header h1{font-size:1.6rem;color:#fff;font-weight:800}
+header .sub{color:#8fa6c4;margin-top:6px;font-size:.95rem}
+.panel{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:20px;margin:16px 0}
+.formrow{display:flex;flex-wrap:wrap;gap:14px;align-items:end}
+.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:140px}
+.field label{font-size:.75rem;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.field input,.field select{background:#0f151f;border:1px solid var(--bd);border-radius:7px;color:var(--tx);padding:9px 11px;font-size:.92rem}
+.field input:focus,.field select:focus{outline:none;border-color:var(--acc)}
+button{background:var(--acc);color:#0d1117;border:none;border-radius:7px;padding:11px 22px;font-weight:700;font-size:.92rem;cursor:pointer;white-space:nowrap}
+button:hover{filter:brightness(1.1)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:18px 0}
+.kpi{background:var(--panel2);border:1px solid var(--bd);border-radius:9px;padding:14px;text-align:center}
+.kpi .l{font-size:.68rem;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:1.2rem;font-weight:800;margin-top:4px}
+.kpi .s{font-size:.78rem;color:var(--mut);margin-top:2px}
+#chart{height:420px;margin-top:10px}
+.msg{color:var(--amb);font-size:.85rem;padding:10px 0}
+.err{color:var(--red)}
+.foot{color:var(--mut);font-size:.78rem;border-top:1px solid var(--bd);margin-top:30px;padding-top:18px}
+.hidden{display:none}
+</style></head><body>
+<header><div class="in">
+<h1>Simulador: Ação vs. Renda Fixa</h1>
+<div class="sub">Escolha um ativo, a data de compra e de venda — compare reinvestir dividendos em ações, em renda fixa, ou nunca ter comprado.</div>
+</div></header>
+<div class="wrap">
+
+<div class="panel">
+  <div class="formrow">
+    <div class="field" style="flex:1.2">
+      <label>Ativo</label>
+      <input id="ticker" list="tickerList" placeholder="Ex: PETR4" autocomplete="off">
+      <datalist id="tickerList"></datalist>
+    </div>
+    <div class="field">
+      <label>Data de compra</label>
+      <input id="dataCompra" type="date">
+    </div>
+    <div class="field">
+      <label>Data de venda</label>
+      <input id="dataVenda" type="date">
+    </div>
+    <div class="field">
+      <label>Capital inicial (R$)</label>
+      <input id="capital" type="number" value="10000" min="1">
+    </div>
+    <button id="btnCalcular">Calcular</button>
+  </div>
+  <div id="msg" class="msg hidden"></div>
+</div>
+
+<div id="resultado" class="hidden">
+  <div class="kpis" id="kpiRow"></div>
+  <div class="panel"><div id="chart"></div></div>
+</div>
+
+<div class="foot">
+Dados públicos de mercado (Yahoo Finance / B3) e Selic/CDI histórica. Cálculo 100% no navegador,
+sem consulta à internet além do carregamento inicial dos arquivos desta página. Material
+informativo; não constitui recomendação de investimento.
+</div>
+</div>
+
+<script>
+const DATA_DIR = 'data/';
+let TICKERS = [], CDI = {};
+let cacheTicker = {};
+
+async function carregarBase() {
+  const [tk, cdi] = await Promise.all([
+    fetch(DATA_DIR + '_tickers.json').then(r => r.json()),
+    fetch(DATA_DIR + '_cdi.json').then(r => r.json()),
+  ]);
+  TICKERS = tk;
+  CDI = cdi;
+  const dl = document.getElementById('tickerList');
+  dl.innerHTML = TICKERS.map(t => `<option value="${t}">`).join('');
+}
+
+async function carregarTicker(ticker) {
+  const key = ticker.toUpperCase();
+  if (cacheTicker[key]) return cacheTicker[key];
+  const resp = await fetch(DATA_DIR + key + '.json');
+  if (!resp.ok) throw new Error(`Ativo "${key}" não encontrado na base.`);
+  const raw = await resp.json();
+  // Expande dividendos esparsos para array paralelo (0 na maioria dos dias)
+  const n = raw.d.length;
+  const div = new Array(n).fill(0);
+  for (const idx in raw.div) div[idx] = raw.div[idx];
+  cacheTicker[key] = { dates: raw.d, close: raw.c, raw: raw.r, div };
+  return cacheTicker[key];
+}
+
+// --- Busca o indice do 1o pregao com data >= alvo (compra) ou <= alvo (venda, fallback) ---
+function idxDataMaisProxima(dates, alvoISO, paraFrente) {
+  if (paraFrente) {
+    for (let i = 0; i < dates.length; i++) if (dates[i] >= alvoISO) return i;
+    return -1;
+  } else {
+    for (let i = dates.length - 1; i >= 0; i--) if (dates[i] <= alvoISO) return i;
+    return -1;
+  }
+}
+
+// --- Fator CDI acumulado entre duas datas ISO (mesma logica do backtester Python) ---
+function fatorCDI(dataIniISO, dataFimISO) {
+  const anos = Object.keys(CDI).map(Number);
+  const mediaCDI = anos.reduce((a, b) => a + CDI[b], 0) / anos.length;
+  let atual = new Date(dataIniISO + 'T00:00:00Z');
+  const fim = new Date(dataFimISO + 'T00:00:00Z');
+  let total = 1.0;
+  while (atual < fim) {
+    const ano = atual.getUTCFullYear();
+    const taxa = (CDI[ano] !== undefined) ? CDI[ano] : mediaCDI;
+    const fimAno = new Date(Date.UTC(ano + 1, 0, 1));
+    const fimPeriodo = fimAno < fim ? fimAno : fim;
+    const diasNoAno = ((ano % 4 === 0 && ano % 100 !== 0) || ano % 400 === 0) ? 366 : 365;
+    const dias = (fimPeriodo - atual) / 86400000;
+    total *= Math.pow(1 + taxa, dias / diasNoAno);
+    atual = fimPeriodo;
+  }
+  return total;
+}
+
+function fmtR$(v) {
+  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPct(v) {
+  const s = v >= 0 ? '+' : '';
+  return s + (v * 100).toFixed(1) + '%';
+}
+
+async function calcular() {
+  const msgEl = document.getElementById('msg');
+  msgEl.classList.add('hidden');
+  const tickerIn = document.getElementById('ticker').value.trim().toUpperCase();
+  const dCompra = document.getElementById('dataCompra').value;
+  const dVenda = document.getElementById('dataVenda').value;
+  const capitalIni = parseFloat(document.getElementById('capital').value) || 10000;
+
+  if (!tickerIn || !dCompra || !dVenda) {
+    msgEl.textContent = 'Preencha ativo, data de compra e data de venda.';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+  if (dVenda <= dCompra) {
+    msgEl.textContent = 'A data de venda precisa ser depois da data de compra.';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+
+  let td;
+  try {
+    td = await carregarTicker(tickerIn);
+  } catch (e) {
+    msgEl.textContent = e.message;
+    msgEl.classList.add('err');
+    msgEl.classList.remove('hidden');
+    return;
+  }
+
+  const iC = idxDataMaisProxima(td.dates, dCompra, true);
+  const iV = idxDataMaisProxima(td.dates, dVenda, false);
+  if (iC < 0 || iV < 0 || iV <= iC) {
+    msgEl.textContent = 'Não há pregões suficientes desse ativo no período escolhido.';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+
+  const dataCompraReal = td.dates[iC];
+  const dataVendaReal = td.dates[iV];
+
+  // --- Series ao longo do periodo (para o grafico) ---
+  const datasChart = [];
+  const curvaDrip = [], curvaCotacao = [], curvaAtivoCDI = [], curvaCDI = [];
+
+  const closeC = td.close[iC], rawC = td.raw[iC];
+  const qty = capitalIni / rawC; // quantidade fixa de "acoes" para os cenarios sem DRIP
+
+  let cashAcum = 0;       // caixa de dividendos (cenario Ativo+CDI), cresce a CDI
+  let dataAnteriorCash = dataCompraReal;
+  let totalProventos = 0;
+  // Fator CDI acumulado incremental (evita recalcular do zero a cada dia —
+  // recalcular do inicio em todo ponto vira O(n^2) e trava em periodos longos)
+  let cdiAcumFator = 1.0;
+  let dataAnteriorCDI = dataCompraReal;
+
+  for (let i = iC; i <= iV; i++) {
+    const dataAtual = td.dates[i];
+
+    // Cresce o caixa acumulado a CDI desde o ultimo evento ate hoje
+    if (dataAtual > dataAnteriorCash) {
+      cashAcum *= fatorCDI(dataAnteriorCash, dataAtual);
+      dataAnteriorCash = dataAtual;
+    }
+    // Cresce o fator CDI acumulado (cenario 100% renda fixa) incrementalmente
+    if (dataAtual > dataAnteriorCDI) {
+      cdiAcumFator *= fatorCDI(dataAnteriorCDI, dataAtual);
+      dataAnteriorCDI = dataAtual;
+    }
+    // Deposita dividendo do dia (se houver) no caixa
+    if (td.div[i] > 0) {
+      const valorDiv = qty * td.div[i];
+      cashAcum += valorDiv;
+      totalProventos += valorDiv;
+    }
+
+    datasChart.push(dataAtual);
+    curvaDrip.push(capitalIni * (td.close[i] / closeC));
+    curvaCotacao.push(capitalIni * (td.raw[i] / rawC));
+    curvaAtivoCDI.push(qty * td.raw[i] + cashAcum);
+    curvaCDI.push(capitalIni * cdiAcumFator);
+  }
+
+  const finalDrip = curvaDrip[curvaDrip.length - 1];
+  const finalCotacao = curvaCotacao[curvaCotacao.length - 1];
+  const finalAtivoCDI = curvaAtivoCDI[curvaAtivoCDI.length - 1];
+  const finalCDI = curvaCDI[curvaCDI.length - 1];
+
+  renderResultado({
+    ticker: tickerIn, dataCompraReal, dataVendaReal, capitalIni,
+    finalDrip, finalCotacao, finalAtivoCDI, finalCDI, totalProventos,
+    datasChart, curvaDrip, curvaCotacao, curvaAtivoCDI, curvaCDI,
+  });
+}
+
+function renderResultado(r) {
+  document.getElementById('resultado').classList.remove('hidden');
+
+  const kpis = [
+    { l: 'Reinvestindo em ações (DRIP)', v: r.finalDrip, cor: '#5fd08a' },
+    { l: 'Reinvestindo em renda fixa', v: r.finalAtivoCDI, cor: '#5aa9f0' },
+    { l: 'Só a cotação (sem dividendo)', v: r.finalCotacao, cor: '#f0b85a' },
+    { l: 'Nunca comprou (100% CDI)', v: r.finalCDI, cor: '#b79df0' },
+  ];
+  document.getElementById('kpiRow').innerHTML = kpis.map(k => `
+    <div class="kpi">
+      <div class="l">${k.l}</div>
+      <div class="v" style="color:${k.cor}">${fmtR$(k.v)}</div>
+      <div class="s">${fmtPct(k.v / r.capitalIni - 1)}</div>
+    </div>`).join('') + `
+    <div class="kpi">
+      <div class="l">Proventos recebidos</div>
+      <div class="v" style="color:#e0e0e0">${fmtR$(r.totalProventos)}</div>
+      <div class="s">${(100 * r.totalProventos / r.capitalIni).toFixed(1)}% do capital</div>
+    </div>`;
+
+  const AX = { paper_bgcolor: '#141a24', plot_bgcolor: '#141a24', font: { color: '#c9d4e3', size: 12 },
+    xaxis: { gridcolor: '#232c3d' }, yaxis: { gridcolor: '#232c3d', title: 'Capital (R$)' } };
+  Plotly.newPlot('chart', [
+    { x: r.datasChart, y: r.curvaDrip, name: 'DRIP (reinveste em ações)', line: { color: '#5fd08a', width: 2 } },
+    { x: r.datasChart, y: r.curvaAtivoCDI, name: 'Ação + dividendo em CDI', line: { color: '#5aa9f0', width: 2 } },
+    { x: r.datasChart, y: r.curvaCotacao, name: 'Só cotação (sem dividendo)', line: { color: '#f0b85a', width: 2 } },
+    { x: r.datasChart, y: r.curvaCDI, name: '100% CDI (nunca comprou)', line: { color: '#b79df0', width: 2, dash: 'dot' } },
+  ], Object.assign({}, AX, {
+    margin: { l: 60, r: 20, t: 20, b: 40 },
+    legend: { font: { color: '#c9d4e3' }, orientation: 'h', y: -0.15 },
+  }), { responsive: true, displayModeBar: false });
+}
+
+document.getElementById('btnCalcular').addEventListener('click', calcular);
+carregarBase();
+</script>
+</body></html>
