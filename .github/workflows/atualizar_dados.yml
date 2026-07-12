@@ -1,0 +1,41 @@
+name: Atualizar cotacoes diarias
+
+on:
+  schedule:
+    # 21:30 horario de Brasilia (00:30 UTC) — depois do fechamento da B3 (18h)
+    # e da atualizacao dos dados de fechamento no Yahoo Finance.
+    - cron: '30 0 * * *'
+  workflow_dispatch: {}   # permite rodar manualmente pela aba Actions
+
+permissions:
+  contents: write   # necessario para o job poder commitar/enviar as mudancas
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install --quiet yfinance pandas
+
+      - name: Rodar atualizacao incremental
+        run: python scripts/atualizar_dados.py
+
+      - name: Commitar e enviar se houve mudanca
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Nenhum dado novo hoje (fim de semana/feriado/sem pregao)."
+          else
+            git commit -m "Atualizacao automatica de cotacoes - $(date -u +%Y-%m-%d)"
+            git push
+          fi
