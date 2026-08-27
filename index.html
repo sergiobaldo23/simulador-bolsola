@@ -183,6 +183,11 @@ function fatorCDI(dataIniISO, dataFimISO) {
   return total;
 }
 
+function fmtDataBR(iso) {
+  if (!iso) return iso;
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
 function fmtR$(v) {
   return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -363,7 +368,8 @@ function renderResultado(r) {
     </div>`;
 
   const AX = { paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: { color: '#1c2b22', size: 12 },
-    xaxis: { gridcolor: '#e3ece4' }, yaxis: { gridcolor: '#e3ece4', title: 'Capital (R$)' } };
+    xaxis: { gridcolor: '#e3ece4', tickformat: '%d/%m/%Y', hoverformat: '%d/%m/%Y' },
+    yaxis: { gridcolor: '#e3ece4', title: 'Capital (R$)' } };
 
   // Destaques com o capital final de cada curva, direto no grafico (nao so
   // nos cartoes acima) — inclui a soma de todos os ativos (linha DRIP/total).
@@ -412,7 +418,7 @@ function renderResultado(r) {
   const head = `<thead><tr><th>Ativo</th><th>Compra</th><th>Venda</th><th>Capital</th>
     <th>DRIP</th><th>Ação+CDI</th><th>Só cotação</th><th>Proventos</th></tr></thead>`;
   const body = r.ativos.map(a => `<tr>
-    <td><b>${a.ticker}</b></td><td>${a.dataCompraReal}</td><td>${a.dataVendaReal}</td>
+    <td><b>${a.ticker}</b></td><td>${fmtDataBR(a.dataCompraReal)}</td><td>${fmtDataBR(a.dataVendaReal)}</td>
     <td>${fmtR$(a.capital)}</td>
     <td style="color:#007a33">${fmtR$(a.finalValores.drip)}</td>
     <td style="color:#0f8a72">${fmtR$(a.finalValores.ativoCDI)}</td>
