@@ -28,14 +28,17 @@ rebalanceamentos trimestrais, líquido de imposto de renda**.
 
 **Baixe só este arquivo e dê duplo clique.** É isso.
 
-Ele tem 606 KB e carrega tudo dentro de si — dados, motor de cálculo e fontes.
-Não precisa baixar o resto do repositório, não precisa instalar nada, não
-precisa de internet. Funciona em modo avião, num pendrive, em qualquer máquina
-com navegador.
+1. Clique em [`teste_estrategia.html`](teste_estrategia.html) aqui na lista de
+   arquivos
+2. No canto superior direito, clique no botão de **download** (seta para baixo)
+3. Dê duplo clique no arquivo baixado
 
-Para baixar: abra o arquivo aqui no GitHub, clique no botão de download
-(a seta para baixo, no canto superior direito do visualizador). Não use o botão
-"Raw" — ele mostra o código em vez da página.
+Não clique em **Raw** — esse botão mostra o código em vez de abrir a página.
+
+Ele tem 606 KB e carrega tudo dentro de si: dados, motor de cálculo e fontes.
+Não precisa baixar o resto do repositório, não precisa instalar nada, não
+precisa nem de internet. Funciona em modo avião, num pendrive, em qualquer
+máquina com navegador.
 
 ---
 
@@ -48,17 +51,44 @@ vários ativos.
 
 ### Como abrir
 
-Este **não** funciona com duplo clique. Ele lê as cotações de 382 arquivos na
-pasta `data/`, e navegadores bloqueiam essa leitura quando a página é aberta
-direto do disco (`file://`). Você precisa de um servidor local:
+Este **não** funciona com duplo clique, e vale entender por quê antes de tentar:
+ele lê as cotações de 382 arquivos da pasta `data/`, e todo navegador bloqueia
+essa leitura quando a página é aberta direto do disco. A tela abre, mas fica
+vazia. Não é defeito — é uma trava de segurança do navegador.
+
+A solução é servir a pasta por um endereço local. Três passos:
+
+**1. Baixe o repositório inteiro** (cerca de 35 MB)
+
+No topo desta página, botão verde **Code** → **Download ZIP**. Descompacte em
+qualquer lugar.
+
+**2. Abra o terminal dentro da pasta descompactada**
+
+- **Windows:** na barra de endereço do Explorador de Arquivos, escreva `cmd` e
+  tecle Enter
+- **macOS:** clique com o botão direito na pasta → Serviços → Novo Terminal
+
+**3. Rode um destes comandos**
 
 ```bash
-# baixe o repositório inteiro (34 MB), entre na pasta e rode:
 python -m http.server 8000
 ```
 
-Depois abra `http://localhost:8000` no navegador. Com Node no lugar do Python,
-`npx serve` faz o mesmo.
+```bash
+npx serve -l 8000
+```
+
+Depois abra <http://localhost:8000> no navegador. Para encerrar, feche o
+terminal.
+
+O primeiro comando precisa de **Python**, o segundo de **Node.js**. No macOS e
+no Linux o Python normalmente já vem instalado; no Windows, costuma não vir —
+nesse caso, instale de [python.org/downloads](https://www.python.org/downloads/)
+marcando a opção **"Add Python to PATH"** durante a instalação.
+
+> Se isso for barreira demais, use a página **Teste sua estratégia** acima: ela
+> é um arquivo só e abre com duplo clique, sem instalar nada.
 
 ---
 
